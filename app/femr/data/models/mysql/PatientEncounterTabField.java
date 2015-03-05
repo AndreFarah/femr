@@ -45,6 +45,7 @@ public class PatientEncounterTabField implements IPatientEncounterTabField {
     @JoinColumn(name = "chief_complaint_id", nullable = true)
     private ChiefComplaint chiefComplaint;
 
+
     @Override
     public int getId() {
         return id;
