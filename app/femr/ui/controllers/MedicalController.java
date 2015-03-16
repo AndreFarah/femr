@@ -16,7 +16,9 @@ import femr.ui.views.html.medical.newVitals;
 import femr.ui.views.html.medical.listVitals;
 import femr.util.DataStructure.Mapping.TabFieldMultiMap;
 import femr.util.DataStructure.Mapping.VitalMultiMap;
+import femr.util.calculations.VitalUnitConverter;
 import femr.util.stringhelpers.StringUtils;
+import org.apache.commons.collections.MapIterator;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -208,6 +210,9 @@ public class MedicalController extends Controller {
         VitalMultiMap vitalMultiMap = vitalMapResponse.getResponseObject();
         // Check if Metric is Set
         // If Metric, GET values from map, convert and put BACK Into MAP
+        if (viewModelGet.getSettings().isMetric()) {
+            vitalMultiMap = VitalUnitConverter.toMetric(vitalMultiMap);
+        }
 
         return ok(edit.render(currentUserSession, vitalMultiMap, viewModelGet));
     }
@@ -372,7 +377,6 @@ public class MedicalController extends Controller {
         EditViewModelGet viewModelGet = new EditViewModelGet();
         ServiceResponse<SettingItem> response = searchService.getSystemSettings();
         viewModelGet.setSettings(response.getResponseObject());
-
         ServiceResponse<PatientEncounterItem> patientEncounterServiceResponse = searchService.findRecentPatientEncounterItemByPatientId(id);
         if (patientEncounterServiceResponse.hasErrors()) {
             throw new RuntimeException();
@@ -386,6 +390,11 @@ public class MedicalController extends Controller {
         // Check if Metric is Set
         // If metric, Get Values from Map, Convert and Put Back Into Map
         VitalMultiMap vitalMap = vitalMultiMapServiceResponse.getResponseObject();
+
+        if (viewModelGet.getSettings().isMetric()) {
+            vitalMap = VitalUnitConverter.toMetric(vitalMap);
+        }
+        /*
         if( viewModelGet.getSettings().isMetric() ) {
             // changed: dateIndex <= vitalMap.getDateList().size()
             // -- using this gives an out of bounds error
@@ -415,9 +424,9 @@ public class MedicalController extends Controller {
                 Float kgs = lbs/ (2.2046f);
                 vitalMap.put("weight", vitalMap.getDate(dateIndex), kgs); // puts it back into map
             }
-        }
+        }*/
 
-        return ok(listVitals.render(vitalMap));
+        return ok(listVitals.render(vitalMap, viewModelGet));
     }
 
     /**
@@ -455,19 +464,24 @@ public class MedicalController extends Controller {
         }
 
         //Alaa Serhan
-        if (viewModel.getHeightFeet() != null) {
-
+        if (viewModel.getHeightFeet() != null && viewModel.getHeightInches() != null) {
             Float heightFeet = viewModel.getHeightFeet().floatValue();
+            Float heightInches = viewModel.getHeightInches().floatValue();
 
             if(viewModelGet.getSettings().isMetric() ){
+                Float heightMetres = heightFeet;
+                Float heightCentimetres = heightInches;
 
-                //Value Entered in Meters - Will be Converted Back in Feet
-                heightFeet = heightFeet * 3.2808f;
+                heightFeet = VitalUnitConverter.getFeet(heightMetres, heightCentimetres);
+                heightInches = VitalUnitConverter.getInches(heightMetres, heightCentimetres);
+               // heightFeet = heightFeet * 3.2808f;
             }
             newVitals.put("heightFeet", heightFeet);
+            newVitals.put("heightInches", heightInches);
         }
 
         //Alaa Serhan
+        /*
         if (viewModel.getHeightInches() != null) {
 
             Float heightInches = viewModel.getHeightInches().floatValue();
@@ -478,7 +492,7 @@ public class MedicalController extends Controller {
                 heightInches = heightInches * (0.39370f);
             }
             newVitals.put("heightInches", heightInches);
-        }
+        }*/
 
         //Alaa Serhan
         if (viewModel.getWeight() != null) {
@@ -487,7 +501,8 @@ public class MedicalController extends Controller {
             if(viewModelGet.getSettings().isMetric() ){
 
                 //Value Entered in Kilograms - Will be Converted back in Pounds
-                weight = weight * (2.204f);
+               // weight = weight * (2.204f);
+                weight = VitalUnitConverter.getLbs(weight);
             }
             newVitals.put("weight", weight);
         }
