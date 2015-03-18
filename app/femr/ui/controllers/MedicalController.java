@@ -16,7 +16,9 @@ import femr.ui.views.html.medical.newVitals;
 import femr.ui.views.html.medical.listVitals;
 import femr.util.DataStructure.Mapping.TabFieldMultiMap;
 import femr.util.DataStructure.Mapping.VitalMultiMap;
+import femr.util.calculations.VitalUnitConverter;
 import femr.util.stringhelpers.StringUtils;
+import org.apache.commons.collections.MapIterator;
 import play.data.Form;
 import play.mvc.Controller;
 import play.mvc.Result;
@@ -204,11 +206,23 @@ public class MedicalController extends Controller {
         ServiceResponse<SettingItem> response = searchService.getSystemSettings();
         viewModelGet.setSettings(response.getResponseObject());
 
-        return ok(edit.render(currentUserSession, vitalMapResponse.getResponseObject(), viewModelGet));
+        //Alaa Serhan - Purple Attempt
+        VitalMultiMap vitalMultiMap = vitalMapResponse.getResponseObject();
+        // Check if Metric is Set
+        // If Metric, GET values from map, convert and put BACK Into MAP
+        if (viewModelGet.getSettings().isMetric()) {
+            vitalMultiMap = VitalUnitConverter.toMetric(vitalMultiMap);
+        }
+
+        return ok(edit.render(currentUserSession, vitalMultiMap, viewModelGet));
     }
 
     public Result editPost(int patientId) {
         CurrentUser currentUserSession = sessionService.getCurrentUserSession();
+
+        //Alaa - I need to Add Stuff Here
+
+
 
         EditViewModelPost viewModelPost = createViewModelPostForm.bindFromRequest().get();
 
@@ -301,6 +315,11 @@ public class MedicalController extends Controller {
 
     public Result updateVitalsPost(int id) {
         CurrentUser currentUser = sessionService.getCurrentUserSession();
+        // Alaa Serhan
+        EditViewModelGet viewModelGet = new EditViewModelGet();
+        ServiceResponse<SettingItem> response = searchService.getSystemSettings();
+        viewModelGet.setSettings(response.getResponseObject());
+
 
         ServiceResponse<PatientEncounterItem> currentEncounterByPatientId = searchService.findRecentPatientEncounterItemByPatientId(id);
         if (currentEncounterByPatientId.hasErrors()) {
@@ -320,17 +339,44 @@ public class MedicalController extends Controller {
             throw new RuntimeException();
         }
 
+        if( viewModelGet.getSettings().isMetric() ) {
+            //Alaa Serhan
+            Float temperature = patientEncounterVitals.get("temperature");
+            Float celsius = (temperature - 32)/(1.800f);
+            patientEncounterVitals.put("temperature", celsius); // puts it back into map
+
+            Float feet = patientEncounterVitals.get("heightFeet");
+            Float meters = feet/ (3.2808f);
+            patientEncounterVitals.put("heightFeet", meters); // puts it back into map
+
+            Float inches = patientEncounterVitals.get("heightInches");
+            Float cm = inches/ (0.39370f);
+            patientEncounterVitals.put("heightInches", cm); // puts it back into map
+
+            Float lbs = patientEncounterVitals.get("weight");
+            Float kgs = lbs/ (2.2046f);
+            patientEncounterVitals.put("weight", kgs); // puts it back into map
+        }
+
         return ok("true");
     }
 
     //partials
     public Result newVitalsGet() {
-        return ok(newVitals.render());
+
+        // Alaa Serhan - Add View Model to Get the Settings to see if METRIC SYSTEM are set or not
+        EditViewModelGet viewModelGet = new EditViewModelGet();
+        ServiceResponse<SettingItem> response = searchService.getSystemSettings();
+        viewModelGet.setSettings(response.getResponseObject());
+
+        return ok(newVitals.render(viewModelGet));
     }
 
     public Result listVitalsGet(Integer id) {
-
-
+        // Alaa Serhan
+        EditViewModelGet viewModelGet = new EditViewModelGet();
+        ServiceResponse<SettingItem> response = searchService.getSystemSettings();
+        viewModelGet.setSettings(response.getResponseObject());
         ServiceResponse<PatientEncounterItem> patientEncounterServiceResponse = searchService.findRecentPatientEncounterItemByPatientId(id);
         if (patientEncounterServiceResponse.hasErrors()) {
             throw new RuntimeException();
@@ -340,7 +386,47 @@ public class MedicalController extends Controller {
             throw new RuntimeException();
         }
 
-        return ok(listVitals.render(vitalMultiMapServiceResponse.getResponseObject()));
+        //Alaa Serhan
+        // Check if Metric is Set
+        // If metric, Get Values from Map, Convert and Put Back Into Map
+        VitalMultiMap vitalMap = vitalMultiMapServiceResponse.getResponseObject();
+
+        if (viewModelGet.getSettings().isMetric()) {
+            vitalMap = VitalUnitConverter.toMetric(vitalMap);
+        }
+        /*
+        if( viewModelGet.getSettings().isMetric() ) {
+            // changed: dateIndex <= vitalMap.getDateList().size()
+            // -- using this gives an out of bounds error
+            // -- .size() is the size of an array at starting index 0
+            for(int dateIndex = 0; dateIndex < vitalMap.getDateListChronological().size(); dateIndex++) {
+                // You are only converting temperature here, need to do the same for the other vitals within this loop
+                // Other than the OutOfBoundsException I was getting, this seems to be working fine
+                String temp = vitalMap.get("temperature", vitalMap.getDate(dateIndex));
+                Float tempC = Float.parseFloat(temp);
+                // (°F - 32) x 5/9 = °C
+                tempC = (tempC - 32) * 5/9;
+                // 2015-03-03 16:59:14.0 date format
+                vitalMap.put("temperature", vitalMap.getDate(dateIndex), tempC);
+
+                String feetS = vitalMap.get("heightFeet", vitalMap.getDate(dateIndex));
+                Float feet = Float.parseFloat(feetS);
+                Float meters = feet/ (3.2808f);
+                vitalMap.put("heightFeet", vitalMap.getDate(dateIndex),meters); // puts it back into map
+
+                String inchesS = vitalMap.get("heightInches", vitalMap.getDate(dateIndex));
+                Float inches = Float.parseFloat(inchesS);
+                Float cm = inches/ (0.39370f);
+                vitalMap.put("heightInches", vitalMap.getDate(dateIndex),cm); // puts it back into map
+
+                String lb = vitalMap.get("heightInches", vitalMap.getDate(dateIndex));
+                Float lbs = Float.parseFloat(lb);
+                Float kgs = lbs/ (2.2046f);
+                vitalMap.put("weight", vitalMap.getDate(dateIndex), kgs); // puts it back into map
+            }
+        }*/
+
+        return ok(listVitals.render(vitalMap, viewModelGet));
     }
 
     /**
@@ -350,6 +436,10 @@ public class MedicalController extends Controller {
      * @return Mapped vital value to vital name
      */
     private Map<String, Float> getPatientEncounterVitals(UpdateVitalsModel viewModel) {
+        EditViewModelGet viewModelGet = new EditViewModelGet();
+        ServiceResponse<SettingItem> response = searchService.getSystemSettings();
+        viewModelGet.setSettings(response.getResponseObject());
+
         Map<String, Float> newVitals = new HashMap<>();
         if (viewModel.getRespiratoryRate() != null) {
             newVitals.put("respiratoryRate", viewModel.getRespiratoryRate());
@@ -357,20 +447,64 @@ public class MedicalController extends Controller {
         if (viewModel.getHeartRate() != null) {
             newVitals.put("heartRate", viewModel.getHeartRate());
         }
+
+        //Alaa Serhan
         if (viewModel.getTemperature() != null) {
-            newVitals.put("temperature", viewModel.getTemperature());
+            Float temperature = viewModel.getTemperature();
+            if(viewModelGet.getSettings().isMetric() ){
+
+                // Value Entered in Celsius - Will be Returned Back As Metric to User, Converted to Fahrenheit when Saving
+                temperature = temperature * 9/5 + 32;
+            }
+
+            newVitals.put("temperature", temperature);
         }
         if (viewModel.getOxygenSaturation() != null) {
             newVitals.put("oxygenSaturation", viewModel.getOxygenSaturation());
         }
-        if (viewModel.getHeightFeet() != null) {
-            newVitals.put("heightFeet", viewModel.getHeightFeet());
+
+        //Alaa Serhan
+        if (viewModel.getHeightFeet() != null && viewModel.getHeightInches() != null) {
+            Float heightFeet = viewModel.getHeightFeet().floatValue();
+            Float heightInches = viewModel.getHeightInches().floatValue();
+
+            if(viewModelGet.getSettings().isMetric() ){
+                Float heightMetres = heightFeet;
+                Float heightCentimetres = heightInches;
+
+                heightFeet = VitalUnitConverter.getFeet(heightMetres, heightCentimetres);
+                heightInches = VitalUnitConverter.getInches(heightMetres, heightCentimetres);
+               // heightFeet = heightFeet * 3.2808f;
+            }
+            newVitals.put("heightFeet", heightFeet);
+            newVitals.put("heightInches", heightInches);
         }
+
+        //Alaa Serhan
+        /*
         if (viewModel.getHeightInches() != null) {
-            newVitals.put("heightInches", viewModel.getHeightInches());
-        }
+
+            Float heightInches = viewModel.getHeightInches().floatValue();
+
+            if(viewModelGet.getSettings().isMetric() ){
+
+                //Value Entered in Centimeters - Will be Converted Back in Inches
+                heightInches = heightInches * (0.39370f);
+            }
+            newVitals.put("heightInches", heightInches);
+        }*/
+
+        //Alaa Serhan
         if (viewModel.getWeight() != null) {
-            newVitals.put("weight", viewModel.getWeight());
+            Float weight = viewModel.getWeight();
+
+            if(viewModelGet.getSettings().isMetric() ){
+
+                //Value Entered in Kilograms - Will be Converted back in Pounds
+               // weight = weight * (2.204f);
+                weight = VitalUnitConverter.getLbs(weight);
+            }
+            newVitals.put("weight", weight);
         }
         if (viewModel.getBloodPressureSystolic() != null) {
             newVitals.put("bloodPressureSystolic", viewModel.getBloodPressureSystolic());
